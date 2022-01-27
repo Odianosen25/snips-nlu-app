@@ -43,7 +43,8 @@ NLU_DATASET_FILE = "nlu_dataset.json"
 nlu_engine = SnipsNLUEngine(config=CONFIG_EN)
 CONFIG = {}
 
-def parseConfig(config_dir):
+
+def parseConfig(config_dir: str) -> None:
     """
     Parse and load the configuration file to get MQTT credentials
     """
@@ -60,6 +61,7 @@ def parseConfig(config_dir):
             logger.debug(traceback.format_exc())
             sys.exit(1)
 
+
 def on_connect(client, userdata, flags, rc):
     """
     The callback for when the client receives a CONNACK response from the MQTT server.
@@ -68,20 +70,32 @@ def on_connect(client, userdata, flags, rc):
 
     # Subscribing in on_connect() means that if we lose the connection and
     # reconnect then subscriptions will be renewed.
-    topics = [PARSE_REQUEST_TOPIC, TRAIN_REQUEST_TOPIC, ENTITY_SET_REQUEST_TOPIC,
-            ENTITY_GET_REQUEST_TOPIC, INTENT_SET_REQUEST_TOPIC, INTENT_GET_REQUEST_TOPIC,
-            ENTITY_REMOVE_REQUEST_TOPIC, INTENT_REMOVE_REQUEST_TOPIC]
+    topics = [
+        PARSE_REQUEST_TOPIC,
+        TRAIN_REQUEST_TOPIC,
+        ENTITY_SET_REQUEST_TOPIC,
+        ENTITY_GET_REQUEST_TOPIC,
+        INTENT_SET_REQUEST_TOPIC,
+        INTENT_GET_REQUEST_TOPIC,
+        ENTITY_REMOVE_REQUEST_TOPIC,
+        INTENT_REMOVE_REQUEST_TOPIC,
+    ]
 
     for topic in topics:
         (result, mid) = client.subscribe(topic)
-        
+
         if result == 0:
             logger.info(f"Subscription to {topic} was Sucessful")
-        else:    
-            logger.warning(f"Subscription to {topic} was Unsucessful, with result {result}")
-    
-    client.publish("snips/nlu/started", json.dumps({"connected": True}), 0, retain=False)
+        else:
+            logger.warning(
+                f"Subscription to {topic} was Unsucessful, with result {result}"
+            )
+
+    client.publish(
+        "snips/nlu/started", json.dumps({"connected": True}), 0, retain=False
+    )
     run_training(uuid.uuid4().hex)
+
 
 def on_message(client, userdata, msg):
     """
@@ -107,24 +121,25 @@ def on_message(client, userdata, msg):
 
     command = topic.split("/")[-1]
     session_id = payload.get("session_id", uuid.uuid4().hex)
-    
+
     if command == "train":
         run_training(session_id, qos)
 
     elif command == "parse":
         run_parsing(session_id, qos, payload)
-    
+
     elif command in ("entity", "intent"):
         config_dir = userdata["config_dir"]
         run_process(command, topic.split("/")[2], config_dir, payload, qos)
-        
-def parse_text(session_id, qos, payload_data) -> None:
+
+
+def parse_text(session_id: str, qos: int, payload_data: dict) -> None:
     """Parse the text sent"""
-    
+
     global nlu_engine
-    
+
     response = {"session_id": session_id, "status": "successful"}
-    
+
     try:
         text = payload_data.get("text", "")
         intent_filter = payload_data.get("intent_filter")
@@ -134,11 +149,12 @@ def parse_text(session_id, qos, payload_data) -> None:
         logger.error(e)
         logger.debug(traceback.format_exc())
         response.update({"status": "failed", "error": str(e)})
-        
+
     res = json.dumps(response, indent=2)
     client.publish(PARSE_RESPONSE_TOPIC, res, qos, retain=False)
 
-def get_all_yaml_files(dir):
+
+def get_all_yaml_files(dir: str) -> list:
 
     files = []
 
@@ -146,8 +162,9 @@ def get_all_yaml_files(dir):
         for fl in fs:
             if fl.endswith(".yaml"):
                 files.append(os.path.join(root, fl))
-    
+
     return files
+
 
 def process_files(task: str, target: str, name: str, folder: str) -> dict:
     """Used to get ot remove files"""
@@ -170,10 +187,10 @@ def process_files(task: str, target: str, name: str, folder: str) -> dict:
             logger.warning(f"Cannot {task} the file {file}, as it doesn't exist")
             warnings.append(f"{file} file doesn't exist")
             continue
-        
+
         if task == "remove":
             os.remove(file)
-        
+
         elif task == "get":
             with open(file, "r") as stream:
                 data.append(yaml.load(stream, Loader=yaml.SafeLoader))
@@ -183,79 +200,97 @@ def process_files(task: str, target: str, name: str, folder: str) -> dict:
 
     if warnings != []:
         response.update({"warning": warnings})
-        
+
     return response
 
-def run_training(session_id, qos=0) -> None:
+
+def run_training(session_id: str, qos: int = 0) -> None:
     """Used to run the training"""
-    
+
     t = threading.Thread(target=train_nlu, args=(session_id, qos,), daemon=True)
     t.start()
-    
-def run_parsing(session_id, qos, payload_data) -> None:
+
+
+def run_parsing(session_id: str, qos: int, payload_data: dict) -> None:
     """Used to run the parsing of text"""
-    
-    t = threading.Thread(target=parse_text, args=(session_id, qos, payload_data,), daemon=True)
+
+    t = threading.Thread(
+        target=parse_text, args=(session_id, qos, payload_data,), daemon=True
+    )
     t.start()
-    
-    
-def run_process(command, task, config_dir, payload, qos) -> None:
+
+
+def run_process(
+    command: str, task: str, config_dir: str, payload: dict, qos: int
+) -> None:
     """Used to run the entity or intent processes"""
-    
-    args = (task, config_dir, payload, qos, )
+
+    args = (
+        task,
+        config_dir,
+        payload,
+        qos,
+    )
     t = None
-    
+
     if command == "entity":
         t = threading.Thread(target=process_entity, args=args, daemon=True)
-    
+
     elif command == "intent":
         t = threading.Thread(target=process_intent, args=args, daemon=True)
-    
+
     if t is not None:
         t.start()
 
-def train_nlu(session_id, qos) -> None:
+
+def train_nlu(session_id: str, qos: int) -> None:
     global nlu_engine
     global training
 
     if training is True:
         logger.warning("Training already taking place, so will be ignoring command")
         return
-    
+
     training = True
-    
+
     logger.info("Training NLU")
     response = {"session_id": session_id, "status": "started"}
     started_response = {"session_id": session_id, "status": "started"}
-    client.publish(TRAIN_RESPONSE_TOPIC, json.dumps(started_response), qos, retain=False)
+    client.publish(
+        TRAIN_RESPONSE_TOPIC, json.dumps(started_response), qos, retain=False
+    )
 
     config_dir = CONFIG["config_dir"]
     dataset_file = os.path.join(config_dir, NLU_DATASET_FILE)
     training_folder = os.path.join(config_dir, "training")
 
     # first we get all files in the folder
-    training_files = get_all_yaml_files(training_folder)        
+    training_files = get_all_yaml_files(training_folder)
     total_files = len(training_files)
 
     logger.info(f"Found a total of {total_files} files to train the NLU")
 
-    if total_files == 0: # no wfiles found
+    if total_files == 0:  # no wfiles found
         logger.warning("Could not find any files to train, exiting training")
-        response.update({"status": "failed", "error": "No training files found to process"})
-    
+        response.update(
+            {"status": "failed", "error": "No training files found to process"}
+        )
+
     else:
         all_training_files = " ".join(training_files)
         logger.debug(f"All Training Files {all_training_files}")
-        
+
         cmd = f"snips-nlu generate-dataset en {all_training_files} > {dataset_file}"
         # now we need to use the cli to convert the ymal to json
-        
+
         try:
             st = time.time()
             stdout = subprocess.run(cmd, shell=True, check=True, stdout=subprocess.PIPE)
             completed = stdout.stdout.decode("utf-8").splitlines()
             tk1 = time.time() - st
-            logger.info(f"Generated dataset sucessfully. Took {tk1}s with message {completed}")
+            logger.info(
+                f"Generated dataset sucessfully. Took {tk1}s with message {completed}"
+            )
 
             with io.open(dataset_file) as f:
                 nlu_dataset = json.load(f)
@@ -264,31 +299,32 @@ def train_nlu(session_id, qos) -> None:
             nlu_engine.fit(nlu_dataset)
             tk2 = time.time() - st
             response.update({"status": "success", "time_interval": tk2})
-        
+
         except DatasetFormatError as d:
             logger.error(d)
             logger.debug(traceback.format_exc())
             response.update({"status": "failed", "error": str(d)})
-            
+
         except NotTrained as n:
             logger.error(n)
             logger.debug(traceback.format_exc())
             response.update({"status": "failed", "error": str(n)})
-        
+
         except KeyError as k:
             logger.error(k)
             logger.debug(traceback.format_exc())
             response.update({"status": "failed", "error": str(k)})
-            
+
         except Exception as e:
             logger.error(e)
             logger.debug(traceback.format_exc())
-            response.update({"status": "failed", "error": str(e)})               
-    
+            response.update({"status": "failed", "error": str(e)})
+
     client.publish(TRAIN_RESPONSE_TOPIC, json.dumps(response), qos, retain=False)
     training = False
 
-def process_entity(task: str, config_dir: str, data: dict, qos):
+
+def process_entity(task: str, config_dir: str, data: dict, qos: int) -> None:
     """Process entity"""
 
     training_folder = os.path.join(config_dir, "training")
@@ -299,14 +335,18 @@ def process_entity(task: str, config_dir: str, data: dict, qos):
     entity_data = data.get("entity", {})
 
     if not isinstance(entity_data, dict):
-        logger.warning("Entity Data must follow the right format {'entity': {}}. Cannot process request")
+        logger.warning(
+            "Entity Data must follow the right format {'entity': {}}. Cannot process request"
+        )
         return
 
     try:
         entity_name = entity_data.get("name")
-        assert entity_data is not {}, ("Entity Data must be given, do ensure right format followed {'entity': {}}")
-        assert entity_name is not None, ("Name of Entity must be given")
-        
+        assert (
+            entity_data is not {}
+        ), "Entity Data must be given, do ensure right format followed {'entity': {}}"
+        assert entity_name is not None, "Name of Entity must be given"
+
         response["name"] = entity_name
 
         if task == "set":
@@ -323,7 +363,7 @@ def process_entity(task: str, config_dir: str, data: dict, qos):
             response_topic = ENTITY_GET_RESPONSE_TOPIC
             res = process_files(task, "entity", entity_name, entities_folder)
             response.update(res)
-        
+
         elif task == "remove":
             response_topic = ENTITY_REMOVE_RESPONSE_TOPIC
             res = process_files(task, "entity", entity_name, entities_folder)
@@ -337,7 +377,8 @@ def process_entity(task: str, config_dir: str, data: dict, qos):
     if response_topic is not None:
         client.publish(response_topic, json.dumps(response), qos, retain=False)
 
-def process_intent(task: str, config_dir: str, data: dict, qos):
+
+def process_intent(task: str, config_dir: str, data: dict, qos: int) -> None:
     """Process intent"""
     training_folder = os.path.join(config_dir, "training")
     intents_folder = os.path.join(training_folder, "intents")
@@ -347,14 +388,18 @@ def process_intent(task: str, config_dir: str, data: dict, qos):
     intent_data = data.get("intent", {})
 
     if not isinstance(intent_data, dict):
-        logger.warning("Intent Data must follow the right format {'intent': {}}. Cannot process request")
+        logger.warning(
+            "Intent Data must follow the right format {'intent': {}}. Cannot process request"
+        )
         return
 
     try:
         intent_name = intent_data.get("name")
-        assert intent_data is not {}, ("Intent Data must be given, do ensure right format followed {'intent': {}}")
-        assert intent_name is not None, ("Name of Intent must be given")
-        
+        assert (
+            intent_data is not {}
+        ), "Intent Data must be given, do ensure right format followed {'intent': {}}"
+        assert intent_name is not None, "Name of Intent must be given"
+
         response["name"] = intent_name
 
         if task == "set":
@@ -372,7 +417,7 @@ def process_intent(task: str, config_dir: str, data: dict, qos):
             response_topic = INTENT_GET_RESPONSE_TOPIC
             res = process_files(task, "intent", intent_name, intents_folder)
             response.update(res)
-        
+
         elif task == "remove":
             response_topic = ENTITY_REMOVE_RESPONSE_TOPIC
             res = process_files(task, "intent", intent_name, intents_folder)
@@ -386,19 +431,34 @@ def process_intent(task: str, config_dir: str, data: dict, qos):
     if response_topic is not None:
         client.publish(response_topic, json.dumps(response), qos, retain=False)
 
+
 """
 Initialize the MQTT object and connect to the server, looping forever waiting for messages
 """
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-c", "--config_file", help="The configuration file to use", type=str, default=None, required=True)
-    parser.add_argument("-d", "--debug", help="The Log level to make use of", type=str, default="INFO", choices=["DEBUG", "ERROR", "WARNING", "CRITICAL"])
+    parser.add_argument(
+        "-c",
+        "--config_file",
+        help="The configuration file to use",
+        type=str,
+        default=None,
+        required=True,
+    )
+    parser.add_argument(
+        "-d",
+        "--debug",
+        help="The Log level to make use of",
+        type=str,
+        default="INFO",
+        choices=["DEBUG", "ERROR", "WARNING", "CRITICAL"],
+    )
 
     args = parser.parse_args()
     config_dir = args.config_file
     log_level = args.debug
-    
+
     logger.setLevel(log_level)
     parseConfig(config_dir)
 
@@ -438,7 +498,7 @@ if __name__ == "__main__":
 
     if USERNAME and PASSWORD:
         client.username_pw_set(username=USERNAME, password=PASSWORD)
-    
+
     logger.info("Starting SNIPS-NLU")
     client.user_data_set(CONFIG)
 
