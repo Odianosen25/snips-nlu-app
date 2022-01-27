@@ -3,7 +3,7 @@
 This docker container, runs a python application that contains the latest Snips NLU and allows to interact with it over MQTT
 
 Setup
------
+------
 
 To setup, simply create a yaml file `config.yaml` and enter in your MQTT broker details following the examples below
 
@@ -26,7 +26,7 @@ The application accepts each intent and entity as a separate file in their respe
 Documentation on writing entities and intents can be found on Snips documentation [here](https://snips-nlu.readthedocs.io/en/latest/)
 
 MQTT Topics
------------
+------------
 
 Outlined below are the topics used and their use cases
 
@@ -40,10 +40,21 @@ Outlined below are the topics used and their use cases
 
 
 Build
-------------
+------
 
 ```bash
 $ docker build -t "odianosen/snips-nlu-app" .
+```
+
+Deploying
+----------
+```bash
+docker run --name snips-nlu-app -d -v $PWD:/config snips-nlu-app:latest
+```
+
+Running in interactive `DEBUG` mode
+```bash
+docker run --name snips-nlu-app -it --rm -v $PWD:/config snips-nlu-app:latest -c /config -d DEBUG
 ```
 
 ## License
