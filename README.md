@@ -43,7 +43,7 @@ Build
 ------------
 
 ```bash
-$ docker build -t odianosen/snips-nlu-app .
+$ docker build -t "odianosen/snips-nlu-app" .
 ```
 
 ## License
